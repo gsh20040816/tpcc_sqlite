@@ -101,7 +101,15 @@ typedef struct
 {
   int number;
 } thread_arg;
-int thread_main(thread_arg*);
+void *thread_main(void *arg_void);
+
+static double safe_divide(double numerator, double denominator)
+{
+  if (denominator == 0.0) {
+    return 0.0;
+  }
+  return numerator / denominator;
+}
 
 void alarm_handler(int signum);
 void alarm_dummy();
@@ -115,8 +123,8 @@ int main( int argc, char *argv[] )
   pthread_t *t;
   thread_arg *thd_arg;
   timer_t timer;
-  struct itimerval itval;
-  struct sigaction  sigact;
+  struct timeval benchmark_start;
+  struct timeval benchmark_end;
   int fd, seed;
 
   printf("CHECKING IF SQLITE IS THREADSAFE: RETURN VALUE = %d\n", sqlite3_threadsafe());
@@ -128,8 +136,9 @@ int main( int argc, char *argv[] )
 
   /* initialize */
   hist_init();
-  activate_transaction = 1;
-  counting_on = 1;
+  activate_transaction = 0;
+  counting_on = 0;
+  num_trans = 0;
 
   for ( i=0; i<5; i++ ){
     success[i]=0;
@@ -292,6 +301,11 @@ int main( int argc, char *argv[] )
     }
   }
 
+  if (num_trans <= 0) {
+    fprintf(stderr, "\n expecting positive number of transactions via -t\n");
+    exit(1);
+  }
+
   if( num_node > 0 ){
     if( num_ware % num_node != 0 ){
       fprintf(stderr, "\n [warehouse] value must be devided by [num_node].\n");
@@ -314,21 +328,7 @@ int main( int argc, char *argv[] )
 	   atoi(argv[11 + arg_offset]), atoi(argv[12 + arg_offset]), atoi(argv[13 + arg_offset]) );
   }
 
-  /* alarm initialize */
   time_count = 0;
-  itval.it_interval.tv_sec = PRINT_INTERVAL;
-  itval.it_interval.tv_usec = 0;
-  itval.it_value.tv_sec = PRINT_INTERVAL;
-  itval.it_value.tv_usec = 0;
-  sigact.sa_handler = alarm_handler;
-  sigact.sa_flags = 0;
-  sigemptyset(&sigact.sa_mask);
-
-  /* setup handler&timer */
-  if( sigaction( SIGALRM, &sigact, NULL ) == -1 ) {
-    fprintf(stderr, "error in sigaction()\n");
-    exit(1);
-  }
 
   fd = open("/dev/urandom", O_RDONLY);
   if (fd == -1) {
@@ -369,7 +369,7 @@ int main( int argc, char *argv[] )
   }
 
   if (sb_percentile_init(&local_percentile, 100000, 1.0, 1e13))
-    return NULL;
+    return EXIT_FAILURE;
 
   /* set up threads */
 
@@ -399,7 +399,7 @@ int main( int argc, char *argv[] )
 
   for( t_num=0; t_num < num_conn; t_num++ ){
     thd_arg[t_num].number= t_num;
-    pthread_create( &t[t_num], NULL, (void *)thread_main, (void *)&(thd_arg[t_num]) );
+    pthread_create(&t[t_num], NULL, thread_main, &thd_arg[t_num]);
   }
 
 
@@ -408,51 +408,18 @@ int main( int argc, char *argv[] )
   sleep(lampup_time);
   printf("\nMEASURING START.\n\n");
   fflush(stdout);
-
-  /* sleep(measure_time); */
-  /* start timer */
-
-#ifndef _SLEEP_ONLY_
-  if( setitimer(ITIMER_REAL, &itval, NULL) == -1 ) {
-    fprintf(stderr, "error in setitimer()\n");
-  }
-#endif
-
+  gettimeofday(&benchmark_start, NULL);
   counting_on = 1;
-  /* wait signal */
-  /*
-  for(i = 0; i < (measure_time / PRINT_INTERVAL); i++ ) {
-  //while (activate_transaction) {	  
-#ifndef _SLEEP_ONLY_
-    pause();
-#else
-    sleep(PRINT_INTERVAL);
-    alarm_dummy();
-#endif
-  }
-  */
-  counting_on = 0;
-
-
-#ifndef _SLEEP_ONLY_
-  /* stop timer */
-  itval.it_interval.tv_sec = 0;
-  itval.it_interval.tv_usec = 0;
-  itval.it_value.tv_sec = 0;
-  itval.it_value.tv_usec = 0;
-  if( setitimer(ITIMER_REAL, &itval, NULL) == -1 ) {
-    fprintf(stderr, "error in setitimer()\n");
-  }
-#endif
-
-  printf("\nSTOPPING THREADS");
-  activate_transaction = 0;
+  activate_transaction = 1;
 
   /* wait threads' ending and close connections*/
   for( i=0; i < num_conn; i++ ){
     pthread_join( t[i], NULL );
   }
+  gettimeofday(&benchmark_end, NULL);
+  counting_on = 0;
 
+  printf("\nSTOPPING THREADS");
   printf("\n");
 
   free(ctx);
@@ -467,11 +434,14 @@ int main( int argc, char *argv[] )
   //hist_report();
   printf("\n<Raw Results>\n");
   for ( i=0; i<5; i++ ){
+    double txn_count = success[i] + late[i];
     printf("  [%d] sc:%d lt:%d  rt:%d  fl:%d avg_rt: %.1f (%d)\n",
            i, success[i], late[i], retry[i], failure[i],
-           total_rt[i] / (success[i] + late[i]), rt_limit[i]);
+           safe_divide(total_rt[i], txn_count), rt_limit[i]);
   }
-  printf(" in %d sec.\n", (measure_time / PRINT_INTERVAL) * PRINT_INTERVAL);
+  time_taken = (benchmark_end.tv_sec - benchmark_start.tv_sec) +
+               (benchmark_end.tv_usec - benchmark_start.tv_usec) / 1000000.0;
+  printf(" in %.3f sec.\n", time_taken);
 
   printf("\n<Raw Results2(sum ver.)>\n");
   for( i=0; i<5; i++ ){
@@ -495,28 +465,28 @@ int main( int argc, char *argv[] )
     j += (success[i] + late[i]);
   }
 
-  f = 100.0 * (float)(success[1] + late[1])/(float)j;
+  f = 100.0 * (float)safe_divide((double)(success[1] + late[1]), (double)j);
   printf("        Payment: %3.2f%% (>=43.0%%)",f);
   if ( f >= 43.0 ){
     printf(" [OK]\n");
   }else{
     printf(" [NG] *\n");
   }
-  f = 100.0 * (float)(success[2] + late[2])/(float)j;
+  f = 100.0 * (float)safe_divide((double)(success[2] + late[2]), (double)j);
   printf("   Order-Status: %3.2f%% (>= 4.0%%)",f);
   if ( f >= 4.0 ){
     printf(" [OK]\n");
   }else{
     printf(" [NG] *\n");
   }
-  f = 100.0 * (float)(success[3] + late[3])/(float)j;
+  f = 100.0 * (float)safe_divide((double)(success[3] + late[3]), (double)j);
   printf("       Delivery: %3.2f%% (>= 4.0%%)",f);
   if ( f >= 4.0 ){
     printf(" [OK]\n");
   }else{
     printf(" [NG] *\n");
   }
-  f = 100.0 * (float)(success[4] + late[4])/(float)j;
+  f = 100.0 * (float)safe_divide((double)(success[4] + late[4]), (double)j);
   printf("    Stock-Level: %3.2f%% (>= 4.0%%)",f);
   if ( f >= 4.0 ){
     printf(" [OK]\n");
@@ -525,35 +495,35 @@ int main( int argc, char *argv[] )
   }
 
   printf(" [response time (at least 90%% passed)]\n");
-  f = 100.0 * (float)success[0]/(float)(success[0] + late[0]);
+  f = 100.0 * (float)safe_divide((double)success[0], (double)(success[0] + late[0]));
   printf("      New-Order: %3.2f%% ",f);
   if ( f >= 90.0 ){
     printf(" [OK]\n");
   }else{
     printf(" [NG] *\n");
   }
-  f = 100.0 * (float)success[1]/(float)(success[1] + late[1]);
+  f = 100.0 * (float)safe_divide((double)success[1], (double)(success[1] + late[1]));
   printf("        Payment: %3.2f%% ",f);
   if ( f >= 90.0 ){
     printf(" [OK]\n");
   }else{
     printf(" [NG] *\n");
   }
-  f = 100.0 * (float)success[2]/(float)(success[2] + late[2]);
+  f = 100.0 * (float)safe_divide((double)success[2], (double)(success[2] + late[2]));
   printf("   Order-Status: %3.2f%% ",f);
   if ( f >= 90.0 ){
     printf(" [OK]\n");
   }else{
     printf(" [NG] *\n");
   }
-  f = 100.0 * (float)success[3]/(float)(success[3] + late[3]);
+  f = 100.0 * (float)safe_divide((double)success[3], (double)(success[3] + late[3]));
   printf("       Delivery: %3.2f%% ",f);
   if ( f >= 90.0 ){
     printf(" [OK]\n");
   }else{
     printf(" [NG] *\n");
   }
-  f = 100.0 * (float)success[4]/(float)(success[4] + late[4]);
+  f = 100.0 * (float)safe_divide((double)success[4], (double)(success[4] + late[4]));
   printf("    Stock-Level: %3.2f%% ",f);
   if ( f >= 90.0 ){
     printf(" [OK]\n");
@@ -562,12 +532,10 @@ int main( int argc, char *argv[] )
   }
 
   printf("\n<TpmC>\n");
-  f = (float)(success[0] + late[0]) * 60.0
-    / (float)((measure_time / PRINT_INTERVAL) * PRINT_INTERVAL);
+  f = (float)safe_divide((double)(success[0] + late[0]) * 60.0, time_taken);
   printf("                 %.3f TpmC\n",f);
 
   printf("\nTime taken\n");
-  time_taken = ((double) (time_end - time_start)) / CLOCKS_PER_SEC;
   printf("                 %.3f seconds\n", time_taken);
 
   exit(0);
@@ -663,8 +631,9 @@ void alarm_dummy()
   }
 }
 
-int thread_main (thread_arg* arg)
+void *thread_main(void *arg_void)
 {
+  thread_arg *arg = (thread_arg *)arg_void;
   int t_num= arg->number;
   int r,i;
   sqlite3* sqlite3_db = NULL;
@@ -758,8 +727,9 @@ int thread_main (thread_arg* arg)
   if( sqlite3_prepare_v2(sqlite3_db, "SELECT count(*) FROM stock WHERE s_w_id = ? AND s_i_id = ? AND s_quantity < ?", -1, &stmt[t_num][34], NULL) != SQLITE_OK) goto sqlerr;
 
     INITIALIZE_TIMERS();
-
-    time_start = clock();
+  while (!activate_transaction) {
+    usleep(1000);
+  }
     
   for (i = 0; i < num_trans; i++) {
   
@@ -773,8 +743,6 @@ int thread_main (thread_arg* arg)
   }
 
   PRINT_TIME();
-
-  time_end = clock();
   
 
   
@@ -788,13 +756,13 @@ int thread_main (thread_arg* arg)
   printf(".");
   fflush(stdout);
 
-  return(r);
+  return NULL;
 
  sqlerr:
   fprintf(stdout, "error at thread_main\n");
   printf("%s: error: %s\n", __func__, sqlite3_errmsg(ctx[t_num]));
 
   //error(ctx[t_num],0);
-  return(0);
+  return NULL;
 
 }

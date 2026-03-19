@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <fcntl.h>
+#include <sys/time.h>
 
 #include <sqlite3.h>
 
@@ -65,10 +66,8 @@ try_stmt_execute(sqlite3_stmt *sqlite_stmt)
  * main() | ARGUMENTS |      Warehouses n [Debug] [Help]
  * +==================================================================
  */
-void 
-main(argc, argv)
-	int             argc;
-	char           *argv[];
+int
+main(int argc, char *argv[])
 {
 	char            arg[2];
         char           *ptr;
@@ -246,10 +245,11 @@ main(argc, argv)
 	sqlite3_close(sqlite);
 	
 	printf("\n...DATA LOADING COMPLETED SUCCESSFULLY.\n");
-	exit(0);
+	return 0;
 Error_SqlCall_close:
 Error_SqlCall:
-	Error(0);
+	Error(NULL);
+	return 1;
 }
 
 /*
@@ -518,8 +518,7 @@ sqlerr:
  * +==================================================================
  */
 int 
-Stock(w_id)
-	int             w_id;
+Stock(int w_id)
 {
 
 	int             s_i_id;
@@ -542,7 +541,7 @@ Stock(w_id)
 	int             orig[MAXITEMS+1];
 	int             pos;
 	int             i;
-	int             error;
+	int             error = 0;
 	sqlite3_stmt* sqlite_stmt;
 
 	/* EXEC SQL WHENEVER SQLERROR GOTO sqlerr;*/
@@ -634,7 +633,8 @@ retry:
 out:
 	return error;
 sqlerr:
-    Error(0);
+    Error(NULL);
+    return 1;
 }
 
 /*
@@ -644,8 +644,7 @@ sqlerr:
  * +==================================================================
  */
 int 
-District(w_id)
-	int             w_id;
+District(int w_id)
 {
 
 	int             d_id;
@@ -661,7 +660,7 @@ District(w_id)
 	float           d_tax;
 	float           d_ytd;
 	int             d_next_o_id;
-	int             error;
+	int             error = 0;
 	sqlite3_stmt* sqlite_stmt;
 
 	/* EXEC SQL WHENEVER SQLERROR GOTO sqlerr;*/
@@ -714,7 +713,8 @@ retry:
 out:
 	return error;
 sqlerr:
-	Error(0);
+	Error(NULL);
+	return 1;
 }
 
 /*
@@ -725,9 +725,7 @@ sqlerr:
  * +==================================================================
  */
 void 
-Customer(d_id, w_id)
-	int             d_id;
-	int             w_id;
+Customer(int d_id, int w_id)
 {
 	int             c_id;
 	int             c_d_id;
@@ -879,7 +877,7 @@ retry:
 
     return;
 sqlerr:
-    Error(0);
+    Error(NULL);
 }
 
 /*
@@ -890,8 +888,7 @@ sqlerr:
  * +==================================================================
  */
 void 
-Orders(d_id, w_id)
-	int             d_id, w_id;
+Orders(int d_id, int w_id)
 {
 
 	int             o_id;
@@ -1074,7 +1071,7 @@ retry:
 	printf("Orders Done.\n");
 	return;
 sqlerr:
-	Error(0);
+	Error(NULL);
 }
 
 /*
@@ -1084,12 +1081,7 @@ sqlerr:
  * +==================================================================
  */
 void 
-MakeAddress(str1, str2, city, state, zip)
-	char           *str1;
-	char           *str2;
-	char           *city;
-	char           *state;
-	char           *zip;
+MakeAddress(char *str1, char *str2, char *city, char *state, char *zip)
 {
 	str1[ MakeAlphaString(10, 20, str1) ] = 0;	/* Street 1 */
 	str2[ MakeAlphaString(10, 20, str2) ] = 0;	/* Street 2 */
@@ -1105,8 +1097,7 @@ MakeAddress(str1, str2, city, state, zip)
  * +==================================================================
  */
 void 
-Error(sqlite_stmt)
-        sqlite3_stmt   *sqlite_stmt;
+Error(sqlite3_stmt *sqlite_stmt)
 {
     if(sqlite_stmt) {
 	    //printf("\n%d, %s, %s", mysql_stmt_errno(mysql_stmt),

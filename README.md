@@ -15,3 +15,14 @@ sqlite3 tpcc.db '.read tpcc.sql'
 ./build-release/tpcc_load -w 4 -d tpcc.db
 ./build-release/tpcc_start -w 4 -c 1 -t 200000 -d tpcc.db
 ```
+
+`tpcc_start` currently runs in fixed-transaction mode, so `-t` is required.
+
+Quick smoke test:
+
+```
+make release
+sqlite3 tpcc.db '.read tpcc.sql'
+./build-release/tpcc_load -w 1 -d tpcc.db
+./build-release/tpcc_start -w 1 -c 1 -r 0 -l 10 -t 10 -d tpcc.db
+```

@@ -160,9 +160,7 @@ int GetPermutation (void)
  |      num  - non-uniform random number
  |      name - last name string
  +==================================================================*/
-void Lastname(num, name)
-  int num;
-  char *name;
+void Lastname(int num, char *name)
 {
   static char *n[] = 
     {"BAR", "OUGHT", "ABLE", "PRI", "PRES", 
@@ -174,4 +172,3 @@ void Lastname(num, name)
  
  return;
 }
-

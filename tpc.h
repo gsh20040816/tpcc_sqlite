@@ -7,6 +7,8 @@
 extern "C" {
 #endif
 
+#include <sqlite3.h>
+
 /*
  * correct values
  */
@@ -75,13 +77,13 @@ void         LoadWare();
 void         LoadCust();
 void         LoadOrd();
 void         LoadNewOrd();   
-int          Stock();
-int          District();
-void         Customer();
-void         Orders();
+int          Stock(int w_id);
+int          District(int w_id);
+void         Customer(int d_id, int w_id);
+void         Orders(int d_id, int w_id);
 void         New_Orders();
-void         MakeAddress();
-void         Error();
+void         MakeAddress(char *str1, char *str2, char *city, char *state, char *zip);
+void         Error(sqlite3_stmt *sqlite_stmt);
 
 #ifdef __STDC__
 void SetSeed (int seed);

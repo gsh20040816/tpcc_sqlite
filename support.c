@@ -8,6 +8,8 @@
 #include <string.h>
 #include <time.h>
 #include <ctype.h>
+#include <errno.h>
+#include <limits.h>
 
 #include "tpc.h"
 
@@ -17,6 +19,28 @@ static int perm_count;
 void SetSeed (int seed)
 {
 	srand(seed);
+}
+
+int ResolveSeedFromEnv(const char *env_name, int *seed)
+{
+	const char *value;
+	char *endptr;
+	long parsed;
+
+	value = getenv(env_name);
+	if (value == NULL || *value == '\0') {
+		return 0;
+	}
+
+	errno = 0;
+	parsed = strtol(value, &endptr, 10);
+	if (errno != 0 || *endptr != '\0' || parsed < INT_MIN || parsed > INT_MAX) {
+		fprintf(stderr, "invalid %s value: %s\n", env_name, value);
+		exit(1);
+	}
+
+	*seed = (int)parsed;
+	return 1;
 }
 
 /*

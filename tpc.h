@@ -87,6 +87,7 @@ void         Error(sqlite3_stmt *sqlite_stmt);
 
 #ifdef __STDC__
 void SetSeed (int seed);
+int ResolveSeedFromEnv(const char *env_name, int *seed);
 int RandomNumber (int min, int max);
 int NURand (unsigned A, unsigned x, unsigned y);
 int MakeAlphaString (int x, int y, char str[]);

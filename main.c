@@ -330,20 +330,22 @@ int main( int argc, char *argv[] )
 
   time_count = 0;
 
-  fd = open("/dev/urandom", O_RDONLY);
-  if (fd == -1) {
-    fd = open("/dev/random", O_RDONLY);
+  if (!ResolveSeedFromEnv("TPCC_SQLITE_SEED", &seed)) {
+    fd = open("/dev/urandom", O_RDONLY);
     if (fd == -1) {
-      struct timeval  tv;
-      gettimeofday(&tv, NULL);
-      seed = (tv.tv_sec ^ tv.tv_usec) * tv.tv_sec * tv.tv_usec ^ tv.tv_sec;
+      fd = open("/dev/random", O_RDONLY);
+      if (fd == -1) {
+        struct timeval  tv;
+        gettimeofday(&tv, NULL);
+        seed = (tv.tv_sec ^ tv.tv_usec) * tv.tv_sec * tv.tv_usec ^ tv.tv_sec;
+      }else{
+        read(fd, &seed, sizeof(seed));
+        close(fd);
+      }
     }else{
       read(fd, &seed, sizeof(seed));
       close(fd);
     }
-  }else{
-    read(fd, &seed, sizeof(seed));
-    close(fd);
   }
   SetSeed(seed);
 

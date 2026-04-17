@@ -96,6 +96,7 @@ int is_local = 0; /* "1" mean local */
 int valuable_flg = 0; /* "1" mean valuable ratio */
 
 const char* db_path = "tpcc.db";
+static tpcc_sqlite_mode_t g_tpcc_sqlite_mode = TPCC_SQLITE_MODE_OFF;
 
 typedef struct
 {
@@ -128,7 +129,9 @@ int main( int argc, char *argv[] )
   int fd, seed;
 
   printf("CHECKING IF SQLITE IS THREADSAFE: RETURN VALUE = %d\n", sqlite3_threadsafe());
-  sqlite3_vfs_register(sqlite3_vfs_find("unix-none"), 1);
+  g_tpcc_sqlite_mode = ResolveTpccSqliteModeFromEnv();
+  ConfigureTpccSqliteProcess(g_tpcc_sqlite_mode);
+  printf("TPCC SQLite mode: %s\n", TpccSqliteModeName(g_tpcc_sqlite_mode));
   
   printf("***************************************\n");
   printf("*** ###easy### TPC-C Load Generator ***\n");
@@ -646,16 +649,13 @@ void *thread_main(void *arg_void)
   
   /* exec sql connect :connect_string; */
   printf("%s: opening db, thread id = %lu\n", __func__, pthread_self());
-  sqlite3_open(db_path, &sqlite3_db);
-  printf("%s: opened db, thread id = %lu\n", __func__, pthread_self());
-
-  sqlite3_exec(sqlite3_db, "PRAGMA journal_mode = OFF;", 0, 0, 0);
-  
-  if(!sqlite3_db) {
+  if( sqlite3_open(db_path, &sqlite3_db) != SQLITE_OK || !sqlite3_db) {
     goto sqlerr;
   }
+  printf("%s: opened db, thread id = %lu\n", __func__, pthread_self());
 
   ctx[t_num] = sqlite3_db;
+  ConfigureTpccSqliteConnection(sqlite3_db, g_tpcc_sqlite_mode);
   
   /* Prepare ALL of SQLs */
   if( sqlite3_prepare_v2(sqlite3_db, "SELECT c_discount, c_last, c_credit, w_tax FROM customer, warehouse WHERE w_id = ? AND c_w_id = w_id AND c_d_id = ? AND c_id = ?", -1, &stmt[t_num][0], NULL) != SQLITE_OK) goto sqlerr;
@@ -762,7 +762,9 @@ void *thread_main(void *arg_void)
 
  sqlerr:
   fprintf(stdout, "error at thread_main\n");
-  printf("%s: error: %s\n", __func__, sqlite3_errmsg(ctx[t_num]));
+  if( sqlite3_db != NULL ){
+    printf("%s: error: %s\n", __func__, sqlite3_errmsg(sqlite3_db));
+  }
 
   //error(ctx[t_num],0);
   return NULL;

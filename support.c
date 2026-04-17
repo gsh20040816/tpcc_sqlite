@@ -16,6 +16,15 @@
 static int nums[CUST_PER_DIST];
 static int perm_count;
 
+static void
+configure_sqlite_pragma(sqlite3 *db, const char *sql, const char *label)
+{
+	if( sqlite3_exec(db, sql, NULL, NULL, NULL) != SQLITE_OK ){
+		fprintf(stderr, "failed to apply %s: %s\n", label, sqlite3_errmsg(db));
+		exit(1);
+	}
+}
+
 void SetSeed (int seed)
 {
 	srand(seed);
@@ -41,6 +50,92 @@ int ResolveSeedFromEnv(const char *env_name, int *seed)
 
 	*seed = (int)parsed;
 	return 1;
+}
+
+tpcc_sqlite_mode_t ResolveTpccSqliteModeFromEnv(void)
+{
+	const char *value;
+
+	value = getenv("TPCC_SQLITE_MODE");
+	if (value == NULL || *value == '\0') {
+		return TPCC_SQLITE_MODE_OFF;
+	}
+	if (strcmp(value, "off") == 0) {
+		return TPCC_SQLITE_MODE_OFF;
+	}
+	if (strcmp(value, "delete") == 0) {
+		return TPCC_SQLITE_MODE_DELETE;
+	}
+	if (strcmp(value, "wal") == 0) {
+		return TPCC_SQLITE_MODE_WAL;
+	}
+
+	fprintf(stderr, "invalid TPCC_SQLITE_MODE value: %s\n", value);
+	fprintf(stderr, "expected one of: off, delete, wal\n");
+	exit(1);
+}
+
+const char *TpccSqliteModeName(tpcc_sqlite_mode_t mode)
+{
+	switch (mode) {
+	case TPCC_SQLITE_MODE_OFF:
+		return "off";
+	case TPCC_SQLITE_MODE_DELETE:
+		return "delete";
+	case TPCC_SQLITE_MODE_WAL:
+		return "wal";
+	default:
+		fprintf(stderr, "unexpected TPCC SQLite mode: %d\n", (int)mode);
+		exit(1);
+	}
+}
+
+void ConfigureTpccSqliteProcess(tpcc_sqlite_mode_t mode)
+{
+	sqlite3_vfs *unix_none_vfs;
+	int ret;
+
+	if (mode != TPCC_SQLITE_MODE_OFF) {
+		return;
+	}
+
+	unix_none_vfs = sqlite3_vfs_find("unix-none");
+	if (unix_none_vfs == NULL) {
+		fprintf(stderr, "sqlite VFS unix-none is not available\n");
+		exit(1);
+	}
+
+	ret = sqlite3_vfs_register(unix_none_vfs, 1);
+	if (ret != SQLITE_OK) {
+		fprintf(stderr, "failed to register sqlite unix-none VFS: %d\n", ret);
+		exit(1);
+	}
+}
+
+void ConfigureTpccSqliteDatabase(sqlite3 *db, tpcc_sqlite_mode_t mode)
+{
+	switch (mode) {
+	case TPCC_SQLITE_MODE_OFF:
+		configure_sqlite_pragma(db, "PRAGMA journal_mode = OFF;", "journal_mode=OFF");
+		configure_sqlite_pragma(db, "PRAGMA synchronous = OFF;", "synchronous=OFF");
+		return;
+	case TPCC_SQLITE_MODE_DELETE:
+		configure_sqlite_pragma(db, "PRAGMA journal_mode = DELETE;", "journal_mode=DELETE");
+		configure_sqlite_pragma(db, "PRAGMA synchronous = NORMAL;", "synchronous=NORMAL");
+		return;
+	case TPCC_SQLITE_MODE_WAL:
+		configure_sqlite_pragma(db, "PRAGMA journal_mode = WAL;", "journal_mode=WAL");
+		configure_sqlite_pragma(db, "PRAGMA synchronous = NORMAL;", "synchronous=NORMAL");
+		return;
+	default:
+		fprintf(stderr, "unexpected TPCC SQLite mode: %d\n", (int)mode);
+		exit(1);
+	}
+}
+
+void ConfigureTpccSqliteConnection(sqlite3 *db, tpcc_sqlite_mode_t mode)
+{
+	ConfigureTpccSqliteDatabase(db, mode);
 }
 
 /*

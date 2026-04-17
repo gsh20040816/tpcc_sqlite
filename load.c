@@ -158,9 +158,9 @@ main(int argc, char *argv[])
 
     /* EXEC SQL WHENEVER SQLERROR GOTO Error_SqlCall; */
 
-    sqlite3_open(db_path, &sqlite);
-    if(!sqlite) {
+    if( sqlite3_open(db_path, &sqlite) != SQLITE_OK || !sqlite ) {
 	    printf("%s: Failed to open DB\n", __func__);
+	    goto Error_SqlCall_close;
     }
 
     /*

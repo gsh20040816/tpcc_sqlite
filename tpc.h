@@ -68,6 +68,13 @@ extern "C" {
 #define LastnameMacro(num,str) \
 {Lastname(num, str.arr); str.len = strlen(str.arr);}
 
+typedef enum
+{
+	TPCC_SQLITE_MODE_OFF = 0,
+	TPCC_SQLITE_MODE_DELETE = 1,
+	TPCC_SQLITE_MODE_WAL = 2
+} tpcc_sqlite_mode_t;
+
 extern long count_ware;
   
 /* Functions */
@@ -88,6 +95,11 @@ void         Error(sqlite3_stmt *sqlite_stmt);
 #ifdef __STDC__
 void SetSeed (int seed);
 int ResolveSeedFromEnv(const char *env_name, int *seed);
+tpcc_sqlite_mode_t ResolveTpccSqliteModeFromEnv(void);
+const char *TpccSqliteModeName(tpcc_sqlite_mode_t mode);
+void ConfigureTpccSqliteProcess(tpcc_sqlite_mode_t mode);
+void ConfigureTpccSqliteDatabase(sqlite3 *db, tpcc_sqlite_mode_t mode);
+void ConfigureTpccSqliteConnection(sqlite3 *db, tpcc_sqlite_mode_t mode);
 int RandomNumber (int min, int max);
 int NURand (unsigned A, unsigned x, unsigned y);
 int MakeAlphaString (int x, int y, char str[]);
